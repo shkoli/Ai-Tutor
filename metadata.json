@@ -1,0 +1,7 @@
+{
+  "name": "HeyKoli",
+  "description": "Salma Hoque Koli's personal IELTS Speaking AI coach.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
