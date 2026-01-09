@@ -23,7 +23,6 @@ export const useGeminiLive = ({ systemInstruction }: UseGeminiLiveProps) => {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
   
-  // Media Recorder for saving user session
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   
@@ -33,11 +32,8 @@ export const useGeminiLive = ({ systemInstruction }: UseGeminiLiveProps) => {
 
   const currentInputRef = useRef('');
   const currentOutputRef = useRef('');
-  // Use 'any' for timeout ref to avoid NodeJS namespace issues in browser environment
-  const feedbackTimeoutRef = useRef<any>(null);
 
   const stopAudioProcessing = useCallback(() => {
-    // Stop recording if active
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
@@ -69,17 +65,6 @@ export const useGeminiLive = ({ systemInstruction }: UseGeminiLiveProps) => {
     setUserTranscript('');
   }, []);
 
-  const sendClientMessage = useCallback(async (text: string) => {
-    if (sessionPromiseRef.current) {
-      try {
-        const session = await sessionPromiseRef.current;
-        await session.send(text, true);
-      } catch (err) {
-        console.error("Failed to send client message:", err);
-      }
-    }
-  }, []);
-
   const connect = useCallback(async () => {
     try {
       setConnectionState(ConnectionState.CONNECTING);
@@ -88,34 +73,26 @@ export const useGeminiLive = ({ systemInstruction }: UseGeminiLiveProps) => {
       currentInputRef.current = '';
       currentOutputRef.current = '';
       setUserTranscript('');
-      audioChunksRef.current = []; // Reset audio chunks
+      audioChunksRef.current = [];
 
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       inputAudioContextRef.current = new AudioContextClass();
       outputAudioContextRef.current = new AudioContextClass();
 
+      await inputAudioContextRef.current.resume();
+      await outputAudioContextRef.current.resume();
+
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        } 
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } 
       });
       mediaStreamRef.current = stream;
 
-      // Start Recording
-      try {
-        const recorder = new MediaRecorder(stream);
-        mediaRecorderRef.current = recorder;
-        recorder.ondataavailable = (event) => {
-          if (event.data.size > 0) {
-            audioChunksRef.current.push(event.data);
-          }
-        };
-        recorder.start();
-      } catch (e) {
-        console.warn("MediaRecorder not supported or failed", e);
-      }
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+      recorder.start();
 
       const inputSource = inputAudioContextRef.current.createMediaStreamSource(stream);
       const inputSampleRate = inputAudioContextRef.current.sampleRate;
@@ -125,22 +102,17 @@ export const useGeminiLive = ({ systemInstruction }: UseGeminiLiveProps) => {
 
       processor.onaudioprocess = (e) => {
         const inputData = e.inputBuffer.getChannelData(0);
-        
         let sum = 0;
         for(let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
         const rms = Math.sqrt(sum / inputData.length);
         setVolume(Math.min(rms * 5, 1));
 
-        // Only send audio if not muted
-        if (!isMuted) {
+        if (!isMuted && sessionPromiseRef.current) {
           const downsampledData = downsampleTo16000(inputData, inputSampleRate);
           const pcmBlob = createPcmBlob(downsampledData);
-          
-          if (sessionPromiseRef.current) {
-              sessionPromiseRef.current.then(session => {
-                  session.sendRealtimeInput({ media: pcmBlob });
-              }).catch(console.error);
-          }
+          sessionPromiseRef.current.then(session => {
+            session.sendRealtimeInput({ media: pcmBlob });
+          }).catch(() => {});
         }
       };
 
@@ -150,23 +122,21 @@ export const useGeminiLive = ({ systemInstruction }: UseGeminiLiveProps) => {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       sessionPromiseRef.current = ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         config: {
           responseModalities: [Modality.AUDIO],
           inputAudioTranscription: {},
           outputAudioTranscription: {},
           speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } }, // Female voice
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } },
           },
           systemInstruction: systemInstruction,
         },
         callbacks: {
           onopen: async () => {
-            console.log('Session Opened');
             setConnectionState(ConnectionState.CONNECTED);
-            // Trigger AI to speak first
             const session = await sessionPromiseRef.current;
-            await session.send("The student is ready. Introduce yourself as HeyKoli and start Part 1.", true); 
+            await session.send("Hello Koli! Start the IELTS session.", true); 
           },
           onmessage: async (message: LiveServerMessage) => {
             const audioData = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
@@ -174,7 +144,6 @@ export const useGeminiLive = ({ systemInstruction }: UseGeminiLiveProps) => {
                setIsModelSpeaking(true);
                const ctx = outputAudioContextRef.current;
                nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
-               
                try {
                    const buffer = await decodeAudioData(audioData, ctx, 24000);
                    const source = ctx.createBufferSource();
@@ -187,69 +156,48 @@ export const useGeminiLive = ({ systemInstruction }: UseGeminiLiveProps) => {
                    source.start(nextStartTimeRef.current);
                    activeSourcesRef.current.add(source);
                    nextStartTimeRef.current += buffer.duration;
-               } catch (decodeErr) {
-                   console.error("Decoding error", decodeErr);
-               }
+               } catch (e) {}
             }
 
             if (message.serverContent?.inputTranscription?.text) {
                 const text = message.serverContent.inputTranscription.text;
                 currentInputRef.current += text;
                 setUserTranscript(currentInputRef.current);
-                
-                const lowerText = text.toLowerCase();
-                // Real-time fluency feedback logic
-                if (/\b(um|uh|er|ah)\b/.test(lowerText)) {
-                    setFluencyFeedback('bad');
-                    if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
-                    feedbackTimeoutRef.current = setTimeout(() => setFluencyFeedback('neutral'), 600);
-                } 
-                else if (/[.!?]/.test(text)) {
-                    setFluencyFeedback('good');
-                    if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
-                    feedbackTimeoutRef.current = setTimeout(() => setFluencyFeedback('neutral'), 600);
-                }
             }
             if (message.serverContent?.outputTranscription?.text) {
                 currentOutputRef.current += message.serverContent.outputTranscription.text;
             }
 
             if (message.serverContent?.turnComplete) {
-                const userText = currentInputRef.current.trim();
-                const modelText = currentOutputRef.current.trim();
-                if (userText) {
-                    setMessages(prev => [...prev, { id: Date.now() + '-user', role: 'user', text: userText }]);
+                if (currentInputRef.current.trim()) {
+                    setMessages(prev => [...prev, { id: Date.now() + '-u', role: 'user', text: currentInputRef.current }]);
                     currentInputRef.current = '';
-                    setUserTranscript('');
                 }
-                if (modelText) {
-                    setMessages(prev => [...prev, { id: Date.now() + '-model', role: 'model', text: modelText }]);
+                if (currentOutputRef.current.trim()) {
+                    setMessages(prev => [...prev, { id: Date.now() + '-m', role: 'model', text: currentOutputRef.current }]);
                     currentOutputRef.current = '';
                 }
-            }
-            
-            if (message.serverContent?.interrupted) {
-                activeSourcesRef.current.forEach(s => s.stop());
-                activeSourcesRef.current.clear();
-                nextStartTimeRef.current = 0;
-                setIsModelSpeaking(false);
             }
           },
           onclose: () => {
             setConnectionState(ConnectionState.DISCONNECTED);
             stopAudioProcessing();
           },
-          onerror: (err) => {
-            console.error(err);
+          onerror: (err: any) => {
+            console.error("Live API Error:", err);
+            const msg = err?.message || "";
             setConnectionState(ConnectionState.ERROR);
-            setError("Connection to AI service failed. Please check your network connection.");
+            if (msg.includes("Requested entity was not found") || msg.includes("404")) {
+                setError("BILLING_REQUIRED");
+            } else {
+                setError(msg || "Network connection failed.");
+            }
             stopAudioProcessing();
           }
         }
       });
     } catch (err: any) {
-      console.error(err);
-      setError(err.message || "Failed to connect to the AI service.");
+      setError(err.message || "Failed to initialize audio stream.");
       setConnectionState(ConnectionState.ERROR);
       stopAudioProcessing();
     }
@@ -262,23 +210,13 @@ export const useGeminiLive = ({ systemInstruction }: UseGeminiLiveProps) => {
     }
     stopAudioProcessing();
     setConnectionState(ConnectionState.DISCONNECTED);
-    
-    // Return the recorded audio
-    if (audioChunksRef.current.length > 0) {
-      return new Blob(audioChunksRef.current, { type: 'audio/webm' });
-    }
-    return null;
-  }, [stopAudioProcessing]);
-
-  useEffect(() => {
-    return () => stopAudioProcessing();
+    return audioChunksRef.current.length > 0 ? new Blob(audioChunksRef.current, { type: 'audio/webm' }) : null;
   }, [stopAudioProcessing]);
 
   return {
     connectionState,
     connect,
     disconnect,
-    sendClientMessage,
     volume,
     isModelSpeaking,
     error,
