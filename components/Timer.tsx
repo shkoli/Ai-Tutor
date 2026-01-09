@@ -52,89 +52,67 @@ export const Timer: React.FC<TimerProps> = ({ durationSeconds, onComplete, isAct
   
   const totalDuration = Math.max(durationSeconds, 1);
   const elapsed = totalDuration - timeLeft;
-  
-  // Refined radius for the circle
-  const radius = 90; 
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference * (elapsed / totalDuration);
+  const progress = (elapsed / totalDuration) * 100;
 
-  const isUrgent = timeLeft < 10 && isActive && timeLeft > 0;
+  const isUrgent = timeLeft < 60 && isActive && timeLeft > 0; // Urgent if less than 1 minute
 
   return (
-    <div className="flex flex-col items-center justify-center p-8 bg-white rounded-[2.5rem] border border-slate-200 shadow-sm w-full relative overflow-hidden group">
-      {/* Subtle background pattern */}
-      <div className="absolute inset-0 opacity-[0.03] pointer-events-none">
-        <svg width="100%" height="100%"><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M 20 0 L 0 0 0 20" fill="none" stroke="currentColor" strokeWidth="1"/></pattern><rect width="100%" height="100%" fill="url(#grid)" /></svg>
-      </div>
+    <div className="flex flex-col p-6 bg-white rounded-[2rem] border border-slate-200 shadow-sm w-full relative overflow-hidden group">
+      {/* Background visual flair */}
+      <div className="absolute top-0 right-0 w-32 h-32 bg-teal-50 rounded-full -mr-16 -mt-16 opacity-40 blur-2xl group-hover:bg-teal-100 transition-colors"></div>
 
-      {label && (
-        <div className="flex items-center justify-between w-full mb-8 relative z-10 px-2">
-            <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">{label}</span>
-            <div className={`w-2 h-2 rounded-full transition-colors ${isActive ? 'bg-teal-500 animate-pulse' : 'bg-slate-300'}`}></div>
+      <div className="flex items-center justify-between w-full mb-6 relative z-10">
+        <div className="flex flex-col">
+          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 mb-1">{label || 'Session Timer'}</span>
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-teal-500 animate-pulse' : 'bg-slate-300'}`}></div>
+            <span className={`text-[10px] font-black uppercase tracking-widest ${isActive ? 'text-teal-600' : 'text-slate-400'}`}>
+              {isActive ? 'Live Session' : 'Standby'}
+            </span>
+          </div>
         </div>
-      )}
-      
-      {/* Circle Container */}
-      <div className={`relative w-48 h-48 flex items-center justify-center ${isUrgent ? 'animate-pulse' : ''}`}>
-        <svg className="absolute top-0 left-0 w-full h-full transform -rotate-90 overflow-visible" viewBox="0 0 200 200">
-          <defs>
-            <linearGradient id="timerGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#14b8a6" />
-                <stop offset="100%" stopColor="#2dd4bf" />
-            </linearGradient>
-          </defs>
-
-          {/* Background Ring */}
-          <circle
-            cx="100"
-            cy="100"
-            r={radius}
-            stroke="#f1f5f9"
-            strokeWidth="8"
-            fill="transparent"
-          />
-          
-          {/* Progress Ring */}
-          <circle
-            cx="100"
-            cy="100"
-            r={radius}
-            stroke={isUrgent ? '#f43f5e' : "url(#timerGradient)"}
-            strokeWidth="8"
-            fill="transparent"
-            strokeDasharray={circumference}
-            strokeDashoffset={strokeDashoffset}
-            strokeLinecap="round"
-            className="transition-all duration-1000 ease-linear"
-          />
-        </svg>
-
-        {/* Time Display */}
-        <div className="flex flex-col items-center justify-center z-10">
-          <div className={`text-4xl font-black tracking-tight tabular-nums transition-colors duration-300 ${isUrgent ? 'text-rose-500' : 'text-slate-800'}`}>
+        <div className="text-right">
+          <div className={`text-3xl font-black tracking-tight tabular-nums transition-colors duration-300 ${isUrgent ? 'text-rose-500' : 'text-slate-800'}`}>
             {minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}
           </div>
-          <div className={`text-[9px] font-black uppercase tracking-widest mt-1 opacity-40 ${isActive ? 'text-teal-600' : 'text-slate-400'}`}>
-            {isActive ? 'Live' : 'Ready'}
-          </div>
         </div>
       </div>
 
-      {/* Progress Stats */}
-      <div className="mt-8 w-full px-2 relative z-10">
-         <div className="flex justify-between items-center mb-3">
-            <span className="text-[9px] uppercase font-black text-slate-400 tracking-widest">Elapsed</span>
-            <span className="text-xs font-bold text-slate-600 tabular-nums">
-                {Math.floor(elapsed / 60)}:{Math.floor(elapsed % 60).toString().padStart(2, '0')}
-            </span>
-         </div>
-         <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
-            <div 
-                className={`h-full transition-all duration-1000 ease-linear ${isUrgent ? 'bg-rose-500' : 'bg-teal-500'}`}
-                style={{ width: `${Math.min(100, (elapsed / totalDuration) * 100)}%` }}
-            ></div>
-         </div>
+      <div className="relative w-full h-3 bg-slate-100 rounded-full overflow-hidden z-10">
+        {/* Subtle grid on progress bar */}
+        <div className="absolute inset-0 opacity-10 pointer-events-none">
+          <svg width="100%" height="100%"><pattern id="grid-timer" width="10" height="10" patternUnits="userSpaceOnUse"><line x1="10" y1="0" x2="10" y2="10" stroke="currentColor" strokeWidth="0.5"/></pattern><rect width="100%" height="100%" fill="url(#grid-timer)" /></svg>
+        </div>
+        
+        <div 
+          className={`h-full transition-all duration-1000 ease-linear shadow-[0_0_10px_rgba(20,184,166,0.3)] ${isUrgent ? 'bg-rose-500' : 'bg-teal-500'}`}
+          style={{ width: `${Math.min(100, progress)}%` }}
+        >
+          {/* Shine effect */}
+          <div className="absolute top-0 bottom-0 left-0 right-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-[shimmer_2s_infinite]"></div>
+        </div>
       </div>
+
+      <div className="mt-4 flex justify-between items-center relative z-10">
+        <div className="flex gap-1.5">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div 
+              key={i} 
+              className={`w-1 h-3 rounded-full transition-colors ${ (progress / 8.33) > i ? (isUrgent ? 'bg-rose-200' : 'bg-teal-200') : 'bg-slate-100'}`}
+            ></div>
+          ))}
+        </div>
+        <span className="text-[10px] font-bold text-slate-400 tabular-nums uppercase tracking-widest">
+          {Math.floor(progress)}% Complete
+        </span>
+      </div>
+
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+      `}} />
     </div>
   );
 };
